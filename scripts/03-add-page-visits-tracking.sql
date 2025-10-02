@@ -13,3 +13,6 @@ CREATE TABLE IF NOT EXISTS page_visits (
 -- Create indexes for faster queries
 CREATE INDEX IF NOT EXISTS idx_page_visits_visited_at ON page_visits(visited_at);
 CREATE INDEX IF NOT EXISTS idx_page_visits_referrer_platform ON page_visits(referrer_platform);
+
+-- Disable RLS to allow public inserts for tracking
+ALTER TABLE page_visits DISABLE ROW LEVEL SECURITY;

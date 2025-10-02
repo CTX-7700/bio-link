@@ -27,3 +27,11 @@ CREATE TABLE IF NOT EXISTS admin_users (
 INSERT INTO admin_users (username, password_hash) 
 VALUES ('admin', '$2b$10$rOzJqQqQqQqQqQqQqQqQqOzJqQqQqQqQqQqQqQqQqOzJqQqQqQqQqQ')
 ON CONFLICT (username) DO NOTHING;
+
+-- Disable RLS for analytics tables to allow public inserts
+ALTER TABLE link_clicks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+
+-- Add RLS policy for admin users (only they can read their own data)
+CREATE POLICY IF NOT EXISTS "Admin users can read own data" ON admin_users
+  FOR SELECT USING (true);

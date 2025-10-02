@@ -50,6 +50,7 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(false)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [timeFilter, setTimeFilter] = useState("7d")
+  const [databaseNotSetup, setDatabaseNotSetup] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -81,13 +82,45 @@ export function AdminDashboard() {
 
   const loadAnalytics = async () => {
     try {
+      console.log("[v0] Loading analytics...")
       const response = await fetch(`/api/admin/analytics?timeFilter=${timeFilter}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAnalytics(data)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("[v0] Analytics API error:", errorData)
+        if (errorData.error === "DATABASE_NOT_SETUP") {
+          setDatabaseNotSetup(true)
+          setAnalytics({
+            totalClicks: 0,
+            totalVisits: 0,
+            uniqueVisitors: 0,
+            topLinks: [],
+            topPlatforms: [],
+            recentClicks: [],
+            recentVisits: [],
+            clicksByDay: [],
+          })
+          return
+        }
+        throw new Error(errorData.message || "Failed to load analytics")
       }
+
+      const data = await response.json()
+      console.log("[v0] Analytics loaded successfully")
+      setAnalytics(data)
+      setDatabaseNotSetup(false)
     } catch (error) {
-      console.error("Failed to load analytics:", error)
+      console.error("[v0] Failed to load analytics:", error)
+      setAnalytics({
+        totalClicks: 0,
+        totalVisits: 0,
+        uniqueVisitors: 0,
+        topLinks: [],
+        topPlatforms: [],
+        recentClicks: [],
+        recentVisits: [],
+        clicksByDay: [],
+      })
     }
   }
 
@@ -174,6 +207,40 @@ export function AdminDashboard() {
             </Button>
           </div>
         </div>
+
+        {databaseNotSetup && (
+          <Card className="mb-8 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+            <CardHeader>
+              <CardTitle className="text-yellow-900 dark:text-yellow-100">Database Setup Required</CardTitle>
+              <CardDescription className="text-yellow-800 dark:text-yellow-200">
+                Analytics tables haven't been created yet. Follow these steps to set up your database:
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-yellow-900 dark:text-yellow-100">
+              <p className="font-medium">Run these SQL scripts in order:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>
+                  <code className="bg-yellow-100 dark:bg-yellow-900 px-2 py-1 rounded">
+                    scripts/01-create-analytics-tables.sql
+                  </code>
+                </li>
+                <li>
+                  <code className="bg-yellow-100 dark:bg-yellow-900 px-2 py-1 rounded">
+                    scripts/03-add-page-visits-tracking.sql
+                  </code>
+                </li>
+                <li>
+                  <code className="bg-yellow-100 dark:bg-yellow-900 px-2 py-1 rounded">
+                    scripts/04-add-performance-indexes.sql
+                  </code>
+                </li>
+              </ol>
+              <p className="mt-4">
+                Click the "Run Script" button in the v0 UI for each file, then refresh this page to see your analytics.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">

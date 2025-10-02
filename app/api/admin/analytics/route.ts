@@ -26,50 +26,70 @@ export async function GET(request: NextRequest) {
         dateFilter = "1970-01-01T00:00:00.000Z" // All time
     }
 
-    // Get total clicks
-    const { data: totalClicksData, error: totalError } = await supabase
-      .from("link_clicks")
-      .select("id")
-      .gte("clicked_at", dateFilter)
+    let totalClicksResult, totalVisitsResult, uniqueClickVisitorsResult, uniquePageVisitorsResult
+    let topLinksResult, referrerResult, recentClicksResult, recentVisitsResult, clicksByDayResult
 
-    if (totalError) throw totalError
+    try {
+      ;[
+        totalClicksResult,
+        totalVisitsResult,
+        uniqueClickVisitorsResult,
+        uniquePageVisitorsResult,
+        topLinksResult,
+        referrerResult,
+        recentClicksResult,
+        recentVisitsResult,
+        clicksByDayResult,
+      ] = await Promise.all([
+        supabase.from("link_clicks").select("id", { count: "exact", head: true }).gte("clicked_at", dateFilter),
+        supabase.from("page_visits").select("id", { count: "exact", head: true }).gte("visited_at", dateFilter),
+        supabase.from("link_clicks").select("ip_address").gte("clicked_at", dateFilter),
+        supabase.from("page_visits").select("ip_address").gte("visited_at", dateFilter),
+        supabase.from("link_clicks").select("link_name").gte("clicked_at", dateFilter),
+        supabase
+          .from("page_visits")
+          .select("referrer_platform")
+          .gte("visited_at", dateFilter)
+          .not("referrer_platform", "is", null),
+        supabase
+          .from("link_clicks")
+          .select("*")
+          .gte("clicked_at", dateFilter)
+          .order("clicked_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("page_visits")
+          .select("*")
+          .gte("visited_at", dateFilter)
+          .order("visited_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("link_clicks")
+          .select("clicked_at")
+          .gte("clicked_at", dateFilter)
+          .order("clicked_at", { ascending: true }),
+      ])
+    } catch (dbError) {
+      return NextResponse.json(
+        {
+          error: "DATABASE_NOT_SETUP",
+          message:
+            "Analytics tables not found. Please run the SQL scripts in order: 01-create-analytics-tables.sql, 03-add-page-visits-tracking.sql, and 04-add-performance-indexes.sql",
+        },
+        { status: 503 },
+      )
+    }
 
-    const { data: totalVisitsData, error: visitsError } = await supabase
-      .from("page_visits")
-      .select("id")
-      .gte("visited_at", dateFilter)
-
-    if (visitsError) throw visitsError
-
-    // Get unique visitors (by IP from both tables)
-    const { data: uniqueClickVisitorsData, error: uniqueClickError } = await supabase
-      .from("link_clicks")
-      .select("ip_address")
-      .gte("clicked_at", dateFilter)
-
-    const { data: uniquePageVisitorsData, error: uniquePageError } = await supabase
-      .from("page_visits")
-      .select("ip_address")
-      .gte("visited_at", dateFilter)
-
-    if (uniqueClickError || uniquePageError) throw uniqueClickError || uniquePageError
-
+    // Calculate unique visitors
     const allIPs = new Set([
-      ...(uniqueClickVisitorsData?.map((row) => row.ip_address) || []),
-      ...(uniquePageVisitorsData?.map((row) => row.ip_address) || []),
+      ...(uniqueClickVisitorsResult.data?.map((row) => row.ip_address).filter(Boolean) || []),
+      ...(uniquePageVisitorsResult.data?.map((row) => row.ip_address).filter(Boolean) || []),
     ])
     const uniqueVisitors = allIPs.size
 
-    // Get top links
-    const { data: topLinksData, error: topLinksError } = await supabase
-      .from("link_clicks")
-      .select("link_name")
-      .gte("clicked_at", dateFilter)
-
-    if (topLinksError) throw topLinksError
-
+    // Process top links
     const linkCounts =
-      topLinksData?.reduce((acc: Record<string, number>, row) => {
+      topLinksResult.data?.reduce((acc: Record<string, number>, row) => {
         acc[row.link_name] = (acc[row.link_name] || 0) + 1
         return acc
       }, {}) || {}
@@ -78,16 +98,9 @@ export async function GET(request: NextRequest) {
       .map(([name, clicks]) => ({ name, clicks: clicks as number }))
       .sort((a, b) => b.clicks - a.clicks)
 
-    const { data: referrerData, error: referrerError } = await supabase
-      .from("page_visits")
-      .select("referrer_platform")
-      .gte("visited_at", dateFilter)
-      .not("referrer_platform", "is", null)
-
-    if (referrerError) throw referrerError
-
+    // Process top platforms
     const platformCounts =
-      referrerData?.reduce((acc: Record<string, number>, row) => {
+      referrerResult.data?.reduce((acc: Record<string, number>, row) => {
         if (row.referrer_platform) {
           acc[row.referrer_platform] = (acc[row.referrer_platform] || 0) + 1
         }
@@ -98,36 +111,9 @@ export async function GET(request: NextRequest) {
       .map(([platform, visits]) => ({ platform, visits: visits as number }))
       .sort((a, b) => b.visits - a.visits)
 
-    // Get recent clicks
-    const { data: recentClicksData, error: recentError } = await supabase
-      .from("link_clicks")
-      .select("*")
-      .gte("clicked_at", dateFilter)
-      .order("clicked_at", { ascending: false })
-      .limit(50)
-
-    if (recentError) throw recentError
-
-    const { data: recentVisitsData, error: recentVisitsError } = await supabase
-      .from("page_visits")
-      .select("*")
-      .gte("visited_at", dateFilter)
-      .order("visited_at", { ascending: false })
-      .limit(50)
-
-    if (recentVisitsError) throw recentVisitsError
-
-    // Get clicks by day
-    const { data: clicksByDayData, error: dayError } = await supabase
-      .from("link_clicks")
-      .select("clicked_at")
-      .gte("clicked_at", dateFilter)
-      .order("clicked_at", { ascending: true })
-
-    if (dayError) throw dayError
-
+    // Process clicks by day
     const clicksByDay =
-      clicksByDayData?.reduce((acc: Record<string, number>, row) => {
+      clicksByDayResult.data?.reduce((acc: Record<string, number>, row) => {
         const date = new Date(row.clicked_at).toISOString().split("T")[0]
         acc[date] = (acc[date] || 0) + 1
         return acc
@@ -138,19 +124,24 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => a.date.localeCompare(b.date))
 
     const analytics = {
-      totalClicks: totalClicksData?.length || 0,
-      totalVisits: totalVisitsData?.length || 0,
+      totalClicks: totalClicksResult.count || 0,
+      totalVisits: totalVisitsResult.count || 0,
       uniqueVisitors,
       topLinks,
       topPlatforms,
-      recentClicks: recentClicksData || [],
-      recentVisits: recentVisitsData || [],
+      recentClicks: recentClicksResult.data || [],
+      recentVisits: recentVisitsResult.data || [],
       clicksByDay: clicksByDayArray,
     }
 
     return NextResponse.json(analytics)
   } catch (error) {
-    console.error("Analytics API error:", error)
-    return NextResponse.json({ error: "Failed to fetch analytics" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }

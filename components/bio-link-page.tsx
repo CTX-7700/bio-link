@@ -54,6 +54,25 @@ const links: LinkData[] = [
 
 export function BioLinkPage() {
   const [clickedLinks, setClickedLinks] = useState<Set<string>>(new Set())
+  const [age, setAge] = useState("")
+
+  useEffect(() => {
+    const calculateAge = () => {
+      const birthDate = new Date(2010, 8, 23) // September 23, 2010 (month is 0-indexed)
+      const now = new Date()
+      const ageInMilliseconds = now.getTime() - birthDate.getTime()
+      const ageInYears = ageInMilliseconds / (365.25 * 24 * 60 * 60 * 1000)
+      return ageInYears.toFixed(8) // Increased decimal places to 8 for more visible changes
+    }
+
+    setAge(calculateAge())
+
+    const interval = setInterval(() => {
+      setAge(calculateAge())
+    }, 50) // Update every 50ms instead of 1000ms for constantly changing age
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const trackPageVisit = async () => {
@@ -68,17 +87,17 @@ export function BioLinkPage() {
             referrer: document.referrer,
           }),
         })
-      } catch (error) {
-        console.error("Failed to track page visit:", error)
-      }
+      } catch (error) {}
     }
 
     trackPageVisit()
   }, [])
 
   const handleLinkClick = async (linkName: string, url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer")
+    setClickedLinks((prev) => new Set(prev).add(linkName))
+
     try {
-      // Track the click
       await fetch("/api/track-click", {
         method: "POST",
         headers: {
@@ -91,16 +110,7 @@ export function BioLinkPage() {
           referrer: document.referrer,
         }),
       })
-
-      setClickedLinks((prev) => new Set(prev).add(linkName))
-
-      // Open the link
-      window.open(url, "_blank", "noopener,noreferrer")
-    } catch (error) {
-      console.error("Failed to track click:", error)
-      // Still open the link even if tracking fails
-      window.open(url, "_blank", "noopener,noreferrer")
-    }
+    } catch (error) {}
   }
 
   const handleEmailClick = () => {
@@ -125,8 +135,8 @@ export function BioLinkPage() {
           <h1 className="text-2xl font-bold mb-2 text-balance">Arjan Chaudhary</h1>
 
           <p className="text-gray-400 text-sm leading-relaxed text-pretty">
-            14 yo | offsec researcher @cyberalertnepal | co-founder @GlowTech | into startups | backed by HCB | 1x CVE |
-            ACP | CASA
+            {age} yo | offsec researcher @stealth | co-founder @GlowTech | into startups | backed by HCB | 1x CVE | ACP
+            | CASA
           </p>
         </div>
 
